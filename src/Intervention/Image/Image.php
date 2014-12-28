@@ -45,6 +45,8 @@ namespace Intervention\Image;
  * @method \Intervention\Image\Image trim(string $base = 'top-left', array $away = array('top', 'bottom', 'left', 'right'), integer $tolerance = 0, integer $feather = 0) Trim away image space in given color. Define an optional base to pick a color at a certain position and borders that should be trimmed away. You can also set an optional tolerance level, to trim similar colors and add a feathering border around the trimed image.
  * @method \Intervention\Image\Image widen(integer $width, \Closure $callback = null)                                                                                     Resizes the current image to new width, constraining aspect ratio. Pass an optional Closure callback as third parameter, to apply additional constraints like preventing possible upsizing.
  */
+use S3StreamWrapper\S3StreamWrapper;
+ 
 class Image extends File
 {
     /**
@@ -85,6 +87,14 @@ class Image extends File
     {
         $this->driver = $driver;
         $this->core = $core;
+        // change stream to cloud
+        S3StreamWrapper::register();
+        $options = array(
+            'key' => \Config::get('Image.key'),
+            'secret' => \Config::get('Image.secret'),
+            'region' => \Config::get('Image.region')
+        );
+        stream_context_set_default(array('s3' => $options));
     }
 
     /**
@@ -131,11 +141,19 @@ class Image extends File
         }
 
         $data = $this->encode(pathinfo($path, PATHINFO_EXTENSION), $quality);
-        $saved = @file_put_contents($path, $data);
+        // prepare s3 path
+        $s3Path = "s3://".\Config::get('Image.bucket_name').\Config::get('Image.image_path');
+        if (strpos($path, 'tmp') != false) {
+            $s3Path = $s3Path.'tmp/';
+        }
+
+        $s3Path = $s3Path.basename($path);
+        $saved = @file_put_contents($s3Path, $data);
+        // $saved = @file_put_contents($path, $data);
 
         if ($saved === false) {
             throw new Exception\NotWritableException(
-                "Can't write image data to path ({$path})"
+                "Can't write image data to path ({$s3path})"
             );
         }
 
